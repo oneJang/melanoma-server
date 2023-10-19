@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-service
+spec:
+  type: NodePort
+  selector:
+    app: server
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30001
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: server
+  labels:
+    app: server
+  name: server
+spec:
+  template:
+    metadata:
+      labels:
+        app: server
+    spec:
+      restartPolicy: Never
+      containers:
+      - image: sjw980523/test-server:v10
+        name: server
+        ports: 
+        - containerPort: 8080
+          #resources:
+          #limits:
+          #cpu: "10"
+          #memory: "20Mi"

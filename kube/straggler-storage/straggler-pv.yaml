@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: straggler-storage2
+  labels:
+    type: straggler_nfs2
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes: ["ReadWriteMany"]
+  nfs:
+    server: "192.168.22.146"
+    path: /straggler_models # NFS server's shared path

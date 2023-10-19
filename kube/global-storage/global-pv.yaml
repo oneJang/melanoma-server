@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: global-storage2
+  labels:
+    type: global_nfs2
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes: ["ReadWriteMany"]
+  nfs:
+    server: "192.168.22.146"
+    path: /global_models # NFS server's shared path

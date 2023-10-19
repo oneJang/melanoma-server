@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: straggler-storage-claim2
+spec:
+  storageClassName: "" # 빈 문자열을 줍니다(중요)
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 4Gi
+  selector:
+    matchExpressions:
+      - key: type
+        operator: In
+        values:
+          - straggler_nfs2
