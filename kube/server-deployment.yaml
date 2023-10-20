@@ -31,6 +31,9 @@ spec:
       containers:
       - image: sjw980523/test-server:v12
         name: server
+        env: 
+        - name: MIN_NUM_CLIENTS
+          value: '5'
         ports: 
         - containerPort: 8080
         volumeMounts: 

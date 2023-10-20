@@ -11,6 +11,7 @@ from flwr.common import ( #common: 서버와 클라이언트 사이에 공유되
     ndarrays_to_parameters, # N차원 넘파이를 파라미터 객체로 변환
     parameters_to_ndarrays, # 파라미터 객체를 N차원 넘파이로 변환
 )
+import time
 import timeit
 from flwr.server.history import History
 import numpy as np
@@ -25,6 +26,7 @@ from flwr.server.client_proxy import ClientProxy
 from flwr.server.strategy.aggregate import aggregate
 from flwr.server.criterion import Criterion
 from env_config import Settings
+import utils
 
 FitResultsAndFailures = Tuple[
     List[Tuple[ClientProxy, FitRes]],
@@ -41,7 +43,7 @@ FitResultsAndFailures = Tuple[
 settings = Settings()
 
 def get_parameters(model) -> List[np.ndarray]:
-        print("get_parameter호출 -- 로컬 모델에서 파라미터 뽑기")
+        print("extract parameters from model..\n")
         parameters = []
         for i, (name, tensor) in enumerate(model.state_dict().items()):
             print(f"  [layer {i}] {name}, {type(tensor)}, {tensor.shape}, {tensor.dtype}")
@@ -60,7 +62,7 @@ def get_parameters(model) -> List[np.ndarray]:
         return parameters
     
 def set_parameters(model, parameters: List[np.ndarray]): # -> None
-    print("set_parameters호출 -- 모델에 파라미터 적용하기")
+    print("Overwrite parameters to model..")
     keys = []
     for name in model.state_dict().keys():
         # Check if this tensor should be included or not
@@ -84,7 +86,7 @@ def fit_client(
     client: ClientProxy, ins: FitIns, timeout: Optional[float]
 ) -> Tuple[ClientProxy, FitRes]:
     """Refine parameters on a single client."""
-    print("server.py의 fit_client() 호출")
+    #print("server.py의 fit_client() 호출")
     fit_res = client.fit(ins, timeout=timeout)
     return client, fit_res
 
@@ -94,7 +96,7 @@ def fit_clients( #서버에서 선택된 클라이언트들에게 모델 파라�
     timeout: Optional[float],
 ) -> FitResultsAndFailures:
     """Refine parameters concurrently on all selected clients."""
-    print("myserver.py의 fit_clients() 호출, timeout = ", timeout)
+    print("Run fit_clients()..")
     results: List[Tuple[ClientProxy, FitRes]] = []
     failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]] = []
     current_clients: List[Tuple[ClientProxy, FitIns]] = []
@@ -103,7 +105,7 @@ def fit_clients( #서버에서 선택된 클라이언트들에게 모델 파라�
         current_clients.append(client)
         
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        print("max_workers:", max_workers)
+        #print("max_workers:", max_workers)
         submitted_fs = {
             executor.submit(fit_client, client_proxy, ins, timeout) #선택된 client에서 fit_client를 비동기적으로 실행하는 Future객체 리턴
             for client_proxy, ins in client_instructions
@@ -159,7 +161,7 @@ class myServer(fl.server.server.Server):
 
     def fit(self, num_rounds: int, timeout: Optional[float]) -> History:
             """Run federated averaging for a number of rounds."""
-            print("server.py의 fit() 호출, timeout = ",timeout) #timeout이 얼마인지 보기 위해 추가해봄
+            print("Run fit() , Round_Per_Timeout = ",timeout) #timeout이 얼마인지 보기 위해 추가해봄
             history = History()
 
             # Initialize parameters
@@ -188,11 +190,11 @@ class myServer(fl.server.server.Server):
                     timeout=timeout,
                 )
                 if res_fit is not None:
-                    print("res_fit is not None..")
+                    #print("res_fit is not None..")
                     parameters_prime, fit_metrics, _ = res_fit  # fit_metrics_aggregated
                     #if current_round == num_rounds and parameters_prime:
                     if parameters_prime:
-                        print("(last round... and )parameters_prime is not None..")
+                        #print("(last round... and )parameters_prime is not None..")
                         self.parameters = parameters_prime
                         
                         #parameter: List = []
@@ -205,7 +207,7 @@ class myServer(fl.server.server.Server):
                                 break #일단 client-2꺼가 먼저 실행되어야할듯
                         global_model = set_parameters(model, parameter)
                         torch.save(global_model, "./model/global_model.pth")
-                        print("\n==========global model을 저장함!!==========\n")
+                        print("\n==========global model saved==========\n")
                         
                         global_parameters = get_parameters(global_model)
                         self.parameters = ndarrays_to_parameters(global_parameters)
@@ -259,10 +261,8 @@ class myServer(fl.server.server.Server):
         ]:
             """Perform a single round of federated averaging."""
             # Get clients and their respective instructions from strategy
-            print("server.py의 fit_round() 호출")
-            print("configure_fit을 통해 선택된 clientproxy와 fit_ins가져오기")
-            
-
+            #print("server.py의 fit_round() 호출")
+            print("Load clientproxy, fit_ins from configure_fit")
             client_instructions = self.strategy.configure_fit( #configure_fit을 통해 선택된 clientproxy와 fit_ins가져오기
                 server_round=server_round,
                 parameters=self.parameters,
@@ -298,7 +298,7 @@ class myServer(fl.server.server.Server):
             for i in range(5):
                 # 파라미터 가져와서 results에 넣기
                 if os.path.exists(file_path + "/late_model_edge%d.pth" %(i+1)):
-                    print("straggler 모델 가져오기")
+                    print("Load straggler models..")
                     # straggler_weights_array = np.load(file_path + "/edge%d/late_parameters.npz" %(i+1))
                     model = torch.load(file_path + "/late_model_edge%d.pth" %(i+1))
                     print("straggler model(edge%d)"%i)
@@ -312,10 +312,10 @@ class myServer(fl.server.server.Server):
                     num_examples=6023,
                     metrics=None,
                     )
-                    print("num_examples:",straggler_fit_res.num_examples)
-                    print("results에 straggler parameters추가")
+                    #print("num_examples:",straggler_fit_res.num_examples)
+                    #print("results에 straggler parameters추가")
                     results.append((None, straggler_fit_res))
-                    print("추가 했으니 straggler model 삭제")
+                    print("Remove straggler model")
                     os.remove(file_path + "/late_model_edge%d.pth"%(i+1))
                 else:
                     continue
@@ -332,18 +332,6 @@ class myServer(fl.server.server.Server):
             return parameters_aggregated, metrics_aggregated, (results, failures)
 
 class myClientManager(fl.server.client_manager.SimpleClientManager):
-    
-    def num_available(self) -> int:
-        """Return the number of available clients.
-
-        Returns
-        -------
-        num_available : int
-            The number of currently available clients.
-        """
-        print("MyClientManager의 num_available()!! num_available =", len(self), "client..:", self)
-        return len(self)
-    
     def sample(
         self,
         num_clients: int,
@@ -354,36 +342,39 @@ class myClientManager(fl.server.client_manager.SimpleClientManager):
         
         """Sample a number of Flower ClientProxy instances."""
         # Block until at least num_clients are connected.
-        print("sample() 호출")
+        print("sampling..")
         if min_num_clients is None:
             min_num_clients = num_clients
         
-        print("wait for clients until connecting server.....")
-        self.wait_for(settings.MIN_NUM_CLIENTS)  #min_num_clients
+        print("Wait for edges until connecting server.....")
+        start = time.time()
+        self.wait_for(settings.MIN_NUM_CLIENTS) #min_num_clients
+        end = time.time()
+        print("Real_sampling_time: %f s"%(end-start))
         # Sample clients which meet the criterion
         available_cids = list(self.clients) # self.clients: Dict[str, ClientProxy] = {}, list로 감싸면 key만 list에 포함
-        print("available_cids:", available_cids)
+        print("Available_cids:", available_cids)
         
         # straggler를 제외하고 나머지를 우선적으로 num_clients만큼 랜덤 샘플링
         # straggler를 제외한 나머지가 num_clients보다 적으면 나머지를 전체 선택 후 (num_clients-나머지)를 straggler에서 랜덤 샘플링
         tier1_available_cids = list()
         for cid in available_cids:
             tier1_available_cids.append(cid)
-        print("tier1_available_cids=", tier1_available_cids)
+        #print("tier1_available_cids=", tier1_available_cids)
         
         straggler_cids = list()
         if len(straggler):
-            print("straggler가 있으면 이거 실행")
+            print("Stragglers exist..")
             straggler_cids = list(straggler)    
             for cid in straggler_cids:
                 if not cid in tier1_available_cids:
-                    print("tier1_available_cids에 cid가 없으므로 패스")
+                    #print("tier1_available_cids에 cid가 없으므로 패스")
                     continue
                 else:
-                    print("tier1_available_cids에 cid가 있으므로 그 cid 삭제하기") 
+                    #print("straggler remove") 
                     tier1_available_cids.remove(cid)           
-        print("straggler_cids =", straggler_cids)
-        print("tier1_available_cids =", tier1_available_cids)
+        print("Straggler_cids =", straggler_cids)
+        print("Real_available_cids =", tier1_available_cids)
             
         if criterion is not None:
             print("if criterion on not None:")
@@ -391,24 +382,14 @@ class myClientManager(fl.server.client_manager.SimpleClientManager):
                 cid for cid in available_cids if criterion.select(self.clients[cid])
             ]
             print("criterion.. available_cids=",available_cids)
-            
-        # if num_clients > len(available_cids):
-        #     log(
-        #         INFO,
-        #         "Sampling failed: number of available clients"
-        #         " (%s) is less than number of requested clients (%s).",
-        #         len(available_cids),
-        #         num_clients,
-        #     )
-        #     return []
         
         sampled_cids = list()
-        print("num_clients =", num_clients)
+        #print("num_clients =", num_clients)
         # num_clients가 더 많으면 tier1_available_cids는 걍 다 sampled_cids에 추가해버리고 나머지는 straggler_cide에서 랜덤 뽑기
         if num_clients >= len(tier1_available_cids):
-            print("if num_clients >= tier1_available_cids..")
+            #print("if num_clients >= Real_available_cids..")
             if len(tier1_available_cids) >= 1:
-                print("if len(tier1_available_cids)>=1..")
+                #print("if len(Real_available_cids)>=1..")
                 for cid in tier1_available_cids:
                     sampled_cids.append(cid)
                     num_clients -= 1
@@ -417,15 +398,26 @@ class myClientManager(fl.server.client_manager.SimpleClientManager):
                     straggler_sampled_cid = random.sample(straggler_cids, num_clients)
                     for scid in straggler_sampled_cid:
                         sampled_cids.append(scid)
-                    print("sampled_cids=",sampled_cids)
+                    #print("Sampled_cids=",sampled_cids)
         else:    
-            print("num_clients < len(tier1_available_cids)...")
+            #print("num_clients < len(tier1_available_cids)...")
             sampled_cids = random.sample(tier1_available_cids, num_clients)
-            print("sample_cids=", sampled_cids)
-        print("sample_cids:", sampled_cids, "전체 client에서 sampled_cids에 있는 cid에 해당하는 clientproxy 리턴하기")
+            #print("Sample_cids=", sampled_cids)
+        print("Sample_cids:", sampled_cids) #"전체 client에서 sampled_cids에 있는 cid에 해당하는 clientproxy 리턴하기"
         return [self.clients[cid] for cid in sampled_cids]
+    
+    def num_available(self) -> int:
+        """Return the number of available clients.
 
-    def wait_for(self, num_clients: int, timeout: int = 86400) -> bool:
+        Returns
+        -------
+        num_available : int
+            The number of currently available clients.
+        """
+        #print("MyClientManager의 num_available()!! num_available =", len(self), "client..:", self)
+        return len(self)
+
+    def wait_for(self, num_clients: int, timeout: int = settings.SAMPLING_TIMEOUT) -> bool:
         """Wait until at least `num_clients` are available.
 
         Blocks until the requested number of clients is available or until a
@@ -442,6 +434,7 @@ class myClientManager(fl.server.client_manager.SimpleClientManager):
         -------
         success : bool
         """
+        print("Sampling wait time: %ds"%timeout)
         with self._cv:
             return self._cv.wait_for(
                 lambda: len(self.clients) >= num_clients, timeout=timeout
@@ -460,7 +453,7 @@ class myClientManager(fl.server.client_manager.SimpleClientManager):
             Indicating if registration was successful. False if ClientProxy is
             already registered or can not be registered for any reason.
         """
-        print("registering client..")
+        print("Registering client..")
         if client.cid in self.clients:
             return False
 
@@ -479,21 +472,21 @@ class myClientManager(fl.server.client_manager.SimpleClientManager):
         ----------
         client : flwr.server.client_proxy.ClientProxy
         """
-        print("unregistering client.., client:", client)
-        # if client.cid in self.clients:
-        #     del self.clients[client.cid]
+        print("Unregistering client.., client:", client)
+        if client.cid in self.clients:
+            del self.clients[client.cid]
 
-        #     with self._cv:
-        #         self._cv.notify_all()
+            with self._cv:
+                self._cv.notify_all()
 
 class testStrategy(fl.server.strategy.FedAvg):
     def __init__(
         self,
         *,
         fraction_fit: float = settings.FRACTION_FIT,
-        fraction_evaluate: float = 0.1,
+        fraction_evaluate: float = settings.FRACTION_EVALUATE,
         min_fit_clients: int = 2,
-        min_evaluate_clients: int = 4,
+        min_evaluate_clients: int = settings.MIN_EVALUATE_CLIENTS,
         min_available_clients: int = settings.AVAILABLE_CLIENTS,
         evaluate_fn: Optional[
             Callable[
@@ -528,21 +521,21 @@ class testStrategy(fl.server.strategy.FedAvg):
     def configure_fit(
         self, server_round: int, parameters: Parameters, client_manager: myClientManager
     ) -> List[Tuple[ClientProxy, FitIns]]:
-        print("configure_fit() 호출!")
+        print("configure_fit..")
         config = {}
         if self.on_fit_config_fn is not None:
             # Custom fit config function provided
             config = self.on_fit_config_fn(server_round)
         fit_ins = FitIns(parameters, config)
         
-        print("self.fraction_fit = ", self.fraction_fit)
+        #print("self.fraction_fit = ", self.fraction_fit)
         sample_size, min_num_clients = self.num_fit_clients(
             client_manager.num_available()
         )
-        print("sample_size: %d, min_num_clients: %d" %(sample_size, min_num_clients))
+        #print("sample_size: %d, min_num_clients: %d" %(sample_size, min_num_clients))
         straggler = self.straggler
         
-        print("client sampling start!!")
+        #print("client sampling start!!")
         clients = client_manager.sample(
             num_clients=sample_size, min_num_clients=min_num_clients, straggler=straggler)
         print("clients:", clients)
@@ -555,7 +548,7 @@ class testStrategy(fl.server.strategy.FedAvg):
         failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
         """Aggregate fit results using weighted average."""
-        print("aggregation_fit() 호출")
+        print("aggregation_fit..")
         
         if len(self.straggler):
             key_list = []
@@ -567,9 +560,9 @@ class testStrategy(fl.server.strategy.FedAvg):
             for key in key_list:
                 del self.straggler[key]        
         if failures: #not self.accept_failures and failures
-            print("# if failures are existed!!")
+            print("failures are existed")
             for item in failures:
-                print("# for item in failures")
+                #print("# for item in failures")
                 if isinstance(item, tuple) and len(item) == 2:
                     client_proxy, _ = item
                     #print("# if isinstance(item, tuple) and len(item) == 2:")
@@ -582,7 +575,7 @@ class testStrategy(fl.server.strategy.FedAvg):
                         self.straggler[client_proxy.cid] = (server_round, penalty*2)
                 else:
                     print("####failures are not tuple.. BaseException!!")
-            print("straggler:", self.straggler)                 
+            #print("straggler:", self.straggler)                 
             #return None, {}
         
         if not results:
@@ -594,16 +587,17 @@ class testStrategy(fl.server.strategy.FedAvg):
         print("straggler:", self.straggler)
         
         # Convert results
-        print("# Convert results")
+        #print("Convert results")
         weights_results = [
             (parameters_to_ndarrays(fit_res.parameters), fit_res.num_examples)
             for _, fit_res in results
         ]
 
-        print("weights_results개수:", len(weights_results))
-        for _, num in weights_results:
-            print("num_examples:", num)
+        print("# weights_results:", len(weights_results))
+        #for _, num in weights_results:
+            #print("num_examples:", num)
         parameters_aggregated = ndarrays_to_parameters(aggregate(weights_results))
+        #return float(loss), self.num_examples["testset"], {"accuracy": float(accuracy), "auc": float(auc), "f1": float(f1)}
         
         # Aggregate custom metrics if aggregation fn was provided
         print("# Aggregate custom metrics if aggregation fn was provided")
@@ -616,43 +610,10 @@ class testStrategy(fl.server.strategy.FedAvg):
             log(WARNING, "No fit_metrics_aggregation_fn provided")
 
         return parameters_aggregated, metrics_aggregated
-    
-    # def aggregate_evaluate(
-    #     self,
-    #     rnd: int,
-    #     results: List[Tuple[ClientProxy, EvaluateRes]],
-    #     failures: List[BaseException],
-    # ) -> Tuple[Optional[float], Dict[str, Scalar]]:
-    #     """Aggregate evaluation losses using weighted average."""
-    #     print("aggregate_evaluate()..")
-    #     if not results:
-    #         return None, {}
-    #     # Do not aggregate if there are failures and failures are not accepted
-    #     if not self.accept_failures and failures:
-    #         return None, {}
-    #     #print(rnd, results, failures)
-    #     loss_aggregated = weighted_loss_avg(
-    #         [
-    #             (evaluate_res.num_examples, evaluate_res.loss,)
-    #             for _, evaluate_res in results
-    #         ]
-    #     )
-    #     accuracy_aggregated = weighted_loss_avg(
-    #         [
-    #             (
-    #                 evaluate_res.num_examples,
-    #                 #evaluate_res.metrics.get("accuracy", 0.0),
-    #                 evaluate_res.loss,
-    #             )
-    #             for _, evaluate_res in results
-    #         ]
-    #     )
-    #     return loss_aggregated, {"accuracy": accuracy_aggregated}
-
-
+ 
 if __name__ == "__main__":
     #fl.server.start_server("0.0.0.0:8080", config={"num_rounds": 3}, strategy=fl.server.strategy.FedAvg())
-        print("start_server() starts")
+        print("FL started...")
         # EXCLUDE_LIST = [
         #     #"num_batches_tracked",
         #     #"running",
@@ -679,4 +640,4 @@ if __name__ == "__main__":
 
         fl.server.start_server(
         server_address="0.0.0.0:"+settings.PORT, config=fl.server.ServerConfig(num_rounds=settings.ROUND_NUM, round_timeout=settings.TIMEOUT), server=server, client_manager=client_manager, strategy=strategy)
-        print("start_server() finished")
+        print("FL finished")

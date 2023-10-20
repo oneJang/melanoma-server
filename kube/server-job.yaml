@@ -26,11 +26,25 @@ spec:
     spec:
       restartPolicy: Never
       containers:
-      - image: sjw980523/test-server:v10
+      - image: sjw980523/test-server:v2.3
         name: server
         ports: 
         - containerPort: 8080
-          #resources:
-          #limits:
-          #cpu: "10"
-          #memory: "20Mi"
+        env:
+        - name: MIN_NUM_CLIENTS
+          value: '5'
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: straggler-storage2
+          mountPath: /server/aggregation_straggler_parameters
+        - name: global-storage2
+          mountPath: /server/model
+      volumes:
+      - name: straggler-storage2
+        persistentVolumeClaim:
+          claimName: straggler-storage-claim2
+      - name: global-storage2
+        persistentVolumeClaim:
+          claimName: global-storage-claim2
+
